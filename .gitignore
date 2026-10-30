@@ -1,0 +1,19 @@
+# ---- 充电数据（隐私，禁止上传） ----
+data/
+*.db
+
+# ---- 测试与临时文件 ----
+_tmp/
+
+# ---- Python ----
+__pycache__/
+*.pyc
+*.pyo
+
+# ---- OCR 中间产物 ----
+ocr_out.json
+ocr_blk_*.png
+
+# ---- 系统 ----
+.DS_Store
+Thumbs.db

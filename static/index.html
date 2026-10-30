@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SU7 充电账本</title>
+<meta name="theme-color" content="#ff6900">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="/static/manifest.json">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo-dot"></span><span>SU7 充电账本</span><span class="mode-badge" id="mode-badge"></span></div>
+  <nav class="tabs" id="tabs">
+    <button data-tab="dashboard" class="active">统计看板</button>
+    <button data-tab="records">充电记录</button>
+    <button data-tab="settings">设置</button>
+  </nav>
+  <div class="top-actions">
+    <button class="btn ghost" id="btn-export">导出 CSV</button>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ================= 统计看板 ================= -->
+  <section id="tab-dashboard" class="tab active">
+    <div class="kpi-row" id="kpi-row"></div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-head">
+          <h3>月度电量与费用</h3>
+          <span class="legend"><i class="dot orange"></i>电量 kWh <i class="dot teal"></i>费用 元</span>
+        </div>
+        <div id="chart-monthly" class="chart"></div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h3>充电开始时段分布</h3>
+          <span class="hint">按开始时间统计电量 · 便于挑谷电</span>
+        </div>
+        <div id="chart-hourly" class="chart"></div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h3>充电单价趋势</h3>
+          <span class="hint">每次充电的元/度</span>
+        </div>
+        <div id="chart-price" class="chart"></div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h3>场站电量排行</h3>
+          <span class="hint">累计充电量 TOP</span>
+        </div>
+        <div id="chart-loc" class="chart"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>最近充电</h3>
+        <button class="btn link" data-goto="records">查看全部 →</button>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="recent-table">
+          <thead>
+            <tr><th>时间</th><th>电量</th><th>费用</th><th>单价</th><th>SOC</th><th>地点</th><th>来源</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 充电记录 ================= -->
+  <section id="tab-records" class="tab">
+    <div class="card import-card">
+      <div class="card-head">
+        <h3>导入充电截图</h3>
+        <span class="hint">拖入小米汽车 App / 充电桩 App 的充电记录截图，自动识别并生成记录</span>
+      </div>
+      <div class="dropzone" id="dropzone">
+        <div class="dz-inner">
+          <div class="dz-icon">⬆</div>
+          <p class="dz-title">拖拽截图到此处，或点击选择文件</p>
+          <p class="dz-sub">支持 PNG / JPG / WEBP，可一次选多张批量识别</p>
+        </div>
+        <input type="file" id="file-input" accept="image/*" multiple hidden>
+        <input type="file" id="camera-input" accept="image/*" capture="environment" hidden>
+        <div class="dz-actions">
+          <button type="button" class="btn primary" id="btn-camera">拍照导入</button>
+          <button type="button" class="btn ghost" id="btn-pick">相册 / 文件选择</button>
+        </div>
+      </div>
+      <div class="queue" id="queue"></div>
+    </div>
+
+    <div class="card review-card hidden" id="review-card">
+      <div class="card-head">
+        <h3>识别校对 <span class="engine-badge" id="review-engine"></span></h3>
+        <div class="row-actions">
+          <button class="btn ghost" id="btn-review-skip">丢弃</button>
+          <button class="btn primary" id="btn-review-save">保存入库</button>
+        </div>
+      </div>
+      <div class="batch-wrap hidden" id="batch-wrap">
+        <div class="batch-bar">
+          <label class="check-label"><input type="checkbox" id="batch-all" checked> 全选</label>
+          <span class="hint" id="batch-hint"></span>
+          <button class="btn primary" id="btn-batch-save">保存勾选记录</button>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table batch-table" id="batch-table">
+            <thead>
+              <tr>
+                <th></th><th>开始时间</th><th>电量 kWh</th><th>费用 元</th>
+                <th>开始%</th><th>结束%</th><th>场站</th><th>运营商</th><th>状态</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="review-grid" id="single-review">
+        <div class="review-image">
+          <img id="review-img" alt="充电截图">
+          <div class="raw-box">
+            <div class="raw-title">识别原文</div>
+            <pre id="review-raw"></pre>
+          </div>
+        </div>
+        <form class="review-form" id="review-form">
+          <div class="f-grid">
+            <label>开始时间<input name="charge_start" placeholder="2026-03-01 22:15"></label>
+            <label>结束时间<input name="charge_end" placeholder="2026-03-02 00:47"></label>
+            <label>时长(分钟)<input name="duration_min" type="number" min="0"></label>
+            <label>充电电量 kWh<input name="energy_kwh" type="number" step="0.01" min="0"></label>
+            <label>总费用 元<input name="fee_yuan" type="number" step="0.01" min="0"></label>
+            <label>电费 元<input name="elec_fee" type="number" step="0.01" min="0"></label>
+            <label>服务费 元<input name="service_fee" type="number" step="0.01" min="0"></label>
+            <label>开始电量 %<input name="start_soc" type="number" min="0" max="100"></label>
+            <label>结束电量 %<input name="end_soc" type="number" min="0" max="100"></label>
+            <label>场站 / 地点<input name="location"></label>
+            <label>运营商<input name="operator"></label>
+            <label>来源
+              <select name="source_type">
+                <option value="xiaomi">小米汽车 App</option>
+                <option value="operator">运营商 App</option>
+                <option value="mixed">混合</option>
+                <option value="manual">手动</option>
+              </select>
+            </label>
+            <label>状态
+              <select name="status">
+                <option value="">—</option>
+                <option value="已完成">已完成</option>
+                <option value="已关闭">已关闭</option>
+                <option value="已取消">已取消</option>
+              </select>
+            </label>
+            <label class="span2">备注<input name="note" placeholder="可留空"></label>
+          </div>
+          <p class="form-tip">带 <span class="badge low">待确认</span> 的字段识别置信度低，请核对后保存。</p>
+        </form>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>全部记录 <span class="hint" id="rec-count"></span></h3>
+        <div class="filters">
+          <input type="date" id="filter-from">
+          <span class="sep">→</span>
+          <input type="date" id="filter-to">
+          <input type="search" id="filter-q" placeholder="搜地点 / 运营商 / 备注">
+          <button class="btn ghost" id="btn-filter-reset">重置</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="records-table">
+          <thead>
+            <tr>
+              <th>时间</th><th>电量</th><th>费用</th><th>单价</th><th>SOC</th>
+              <th>时长</th><th>地点</th><th>来源</th><th>识别</th><th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 设置 ================= -->
+  <section id="tab-settings" class="tab">
+    <div class="card settings-card">
+      <div class="card-head"><h3>运行模式</h3><span class="hint" id="mode-indicator"></span></div>
+      <p class="hint">电脑访问本应用为「服务模式」（Windows OCR + 数据库）；手机安装后为「独立模式」（数据存本机、离线 OCR）。两端通过下面的 JSON 同步。</p>
+    </div>
+
+    <div class="card settings-card">
+      <div class="card-head"><h3>数据同步</h3></div>
+      <p class="hint">导出 JSON 传到另一台设备导入即可合并（自动去重）。截图图片保留在原设备，不随 JSON 传输。</p>
+      <div class="row-actions">
+        <button class="btn primary" id="btn-export-json">导出 JSON</button>
+        <button class="btn ghost" id="btn-import-json">导入 JSON</button>
+        <input type="file" id="import-json-input" accept="application/json,.json" hidden>
+      </div>
+    </div>
+
+    <div class="card settings-card">
+      <div class="card-head"><h3>视觉识别（可选，识别更准）</h3></div>
+      <div class="f-grid">
+        <label class="span2 check-label">
+          <input type="checkbox" id="vision-enabled"> 启用视觉大模型识别（未启用或失败时自动回退到 Windows 本地 OCR）
+        </label>
+        <label class="span2">API Base URL
+          <input id="vision-base" placeholder="https://api.openai.com 或任意 OpenAI 兼容地址">
+        </label>
+        <label class="span2">API Key
+          <input id="vision-key" type="password" placeholder="sk-...">
+        </label>
+        <label>模型名称
+          <input id="vision-model" placeholder="gpt-4o-mini / qwen-vl-plus 等">
+        </label>
+      </div>
+      <div class="row-actions">
+        <button class="btn primary" id="btn-save-settings">保存设置</button>
+        <span class="hint" id="settings-msg"></span>
+      </div>
+    </div>
+
+    <div class="card settings-card">
+      <div class="card-head"><h3>数据</h3></div>
+      <p class="hint">数据保存在本地 <code>data/charging.db</code>，截图在 <code>data/screenshots/</code>。导出 CSV 可随时备份。</p>
+      <div class="row-actions">
+        <button class="btn ghost" id="btn-export2">导出 CSV</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- 记录编辑弹窗 -->
+<div class="modal hidden" id="edit-modal">
+  <div class="modal-box">
+    <div class="card-head">
+      <h3>编辑记录 <span class="hint" id="edit-id"></span></h3>
+      <div class="row-actions">
+        <button class="btn ghost" id="btn-edit-cancel">取消</button>
+        <button class="btn primary" id="btn-edit-save">保存</button>
+      </div>
+    </div>
+    <form class="review-form" id="edit-form">
+      <div class="f-grid">
+        <label>开始时间<input name="charge_start"></label>
+        <label>结束时间<input name="charge_end"></label>
+        <label>时长(分钟)<input name="duration_min" type="number" min="0"></label>
+        <label>充电电量 kWh<input name="energy_kwh" type="number" step="0.01" min="0"></label>
+        <label>总费用 元<input name="fee_yuan" type="number" step="0.01" min="0"></label>
+        <label>电费 元<input name="elec_fee" type="number" step="0.01" min="0"></label>
+        <label>服务费 元<input name="service_fee" type="number" step="0.01" min="0"></label>
+        <label>开始电量 %<input name="start_soc" type="number" min="0" max="100"></label>
+        <label>结束电量 %<input name="end_soc" type="number" min="0" max="100"></label>
+        <label>场站 / 地点<input name="location"></label>
+        <label>运营商<input name="operator"></label>
+        <label>来源
+          <select name="source_type">
+            <option value="xiaomi">小米汽车 App</option>
+            <option value="operator">运营商 App</option>
+            <option value="mixed">混合</option>
+            <option value="manual">手动</option>
+          </select>
+        </label>
+        <label class="span2">备注<input name="note"></label>
+      </div>
+    </form>
+    <div class="edit-image hidden" id="edit-image"><img alt="截图"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="/static/tesseract/tesseract.min.js"></script>
+<script src="/static/parser.js"></script>
+<script src="/static/db.js"></script>
+<script src="/static/ocr.js"></script>
+<script src="/static/api.js"></script>
+<script src="/static/app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(function () {});
+}
+</script>
+</body>
+</html>
